@@ -37,11 +37,13 @@ If the user's initial message already covers some of these, don't re-ask — ack
 
 ### Phase 2: Ecosystem Discovery
 
-Search for existing skills that overlap with the user's intent. Cast a wide net.
+Search for existing skills that overlap with the user's intent. Do this efficiently — search directly, don't delegate discovery to subagents.
 
-**Where to search (and how):**
+**Search strategy: direct searches first, agents only for deep analysis.**
 
-1. **GitHub** — The primary source. Use `gh search repos` or web search to find repos with `SKILL.md` files, or repos tagged with `claude-skill`, `agent-skill`, etc.
+Run these searches yourself (not via subagents — they often hit permission issues and waste tokens):
+
+1. **GitHub (primary source)** — Use `gh search repos` with `--sort stars --json fullName,description,stargazersCount,updatedAt` to get structured data with star counts upfront.
    ```
    Search queries to try:
    - "[domain] SKILL.md" (e.g., "code-review SKILL.md")
@@ -49,15 +51,22 @@ Search for existing skills that overlap with the user's intent. Cast a wide net.
    - "[domain] agent skill"
    - "awesome-claude-skills [domain]"
    ```
-   Once you find repos, fetch their `SKILL.md` files directly via raw GitHub URLs.
 
-2. **Skill directories** — Use web search to check aggregators like SkillsMP (skillsmp.com) and LobeHub (lobehub.com/skills) for existing skills in the domain. Fetch and read any promising results.
+2. **Web search** — Use `WebSearch` directly for broader discovery: skill directories (SkillsMP, LobeHub), blog posts, and adjacent tools.
 
-3. **Plugin marketplaces** — Check if there are Claude Code plugins covering the same domain (e.g., `phuryn/pm-skills` for product management).
+3. **Plugin marketplaces** — Check if there are Claude Code plugins covering the same domain.
 
-**How many to find:** Aim for 3-8 relevant skills. More than that and the analysis becomes noise. If you find fewer than 3, broaden the search terms. If you find more than 8, filter by relevance and quality signals (stars, recency, documentation quality).
+**Quality gate: filter out repos with ≤10 stars.** Stars are a reasonable proxy for quality and community validation. Don't waste tokens fetching and analyzing low-signal repos. Exceptions: very new repos (<2 weeks old) in a niche domain where few options exist.
+
+**How many to keep:** Aim for 3-8 relevant skills after filtering. If fewer than 3 pass the quality gate, broaden search terms or lower the threshold to ≤5 stars. If more than 8, keep the top 8 by stars.
 
 **If you find almost nothing:** Some domains are genuinely novel. If after broadening you still find fewer than 2 relevant skills, shift to analyzing adjacent domains — skills that solve related problems or use techniques that could transfer. Note to the user that this is a greenfield opportunity and skip ahead to Phase 5 with recommendations drawn from adjacent-domain patterns rather than direct comparisons.
+
+**Fetching content efficiently — minimize token cost:**
+- **SKILL.md / README files:** Always use `raw.githubusercontent.com/{owner}/{repo}/{branch}/SKILL.md` — never fetch the GitHub HTML page.
+- **Repo metadata (stars, dates, description):** Use `gh api repos/{owner}/{repo} --jq '{stars: .stargazers_count, updated: .updated_at, description: .description}'` — don't scrape HTML.
+- **Blog posts / articles:** Prefer web search snippets for context. Only fetch if you need specific technical content (threat patterns, architecture details). Avoid fetching pages >50KB unless essential.
+- **Never fetch full GitHub repo HTML pages** — they're 200-700KB of navigation chrome with little useful content.
 
 **What to capture for each skill:**
 
@@ -65,7 +74,7 @@ Search for existing skills that overlap with the user's intent. Cast a wide net.
 For each discovered skill, record:
 - Name and source URL
 - Brief description (what it claims to do)
-- Star count / popularity signals
+- Star count (numeric — use gh api or gh search repos to get the actual number; "moderate" or "low" are not acceptable)
 - Last updated date
 - SKILL.md structure (frontmatter, sections, length)
 - Whether it bundles scripts, references, or assets
@@ -73,7 +82,7 @@ For each discovered skill, record:
 - Any obvious gaps or issues
 ```
 
-Save findings to `references/discovery-report.md` using the template in `references/discovery-template.md`. See `references/example-discovery-report.md` for an example of the expected depth and quality.
+Save findings to `./discovery-report.md` in the user's current working directory, using the template structure from `references/discovery-template.md`. See `references/example-discovery-report.md` for an example of the expected depth and quality. The report is a deliverable for the user's project — do not write it into the skill-forge skill folder.
 
 ### Phase 3: Deep Analysis
 
@@ -111,7 +120,9 @@ Flag any issues clearly. Use severity levels:
 
 ### Phase 4: Comparative Synthesis
 
-Now bring it all together. Create a comparison that highlights:
+Now bring it all together. **Order skills by star count (descending)** throughout — in the discovery report, comparative matrix, and briefing. Popularity is a useful signal for the user to gauge community validation.
+
+Create a comparison that highlights:
 
 1. **Common patterns** — What do all the good skills in this space do similarly? These are likely important.
 2. **Differentiators** — Where do they diverge? Why might one approach be better than another?
@@ -189,8 +200,9 @@ Recommend the new skill adopt the pattern-matching approach, expand scope to cov
 
 ### Claude Code
 - Full power: can fetch repos, read SKILL.md files directly from GitHub raw URLs, run analysis scripts
-- Use `gh search repos`, `WebSearch`, and `WebFetch` for discovery
-- For efficiency, run discovery searches in parallel and use subagents for analyzing multiple skills simultaneously during Phase 3
+- **Phase 2 (Discovery):** Run `gh search repos`, `WebSearch`, and `WebFetch` directly — do NOT delegate initial discovery to subagents (they often fail on permissions, wasting tokens)
+- **Phase 3 (Deep Analysis):** Use subagents here if analyzing 3+ skills in parallel — this is where agents add real value
+- Use `raw.githubusercontent.com` for file content, `gh api` for metadata — avoid fetching full GitHub HTML pages
 - Can integrate with `skill-creator` for the eval loop after Phase 5
 
 ### Claude.ai
